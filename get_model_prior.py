@@ -1,0 +1,515 @@
+from netCDF4 import Dataset
+from pylab import *
+import numpy as np
+import sys
+#from mpl_toolkits.basemap import Basemap
+from datetime import datetime, timedelta
+import glob
+import platform
+
+"""
+This model prior generator uses forecast data instead of only analysis
+data to generate the prior.  As a result, there is probably less dependence of the 
+prior on actual radiosondes.
+
+This script is ready to be used as a function in other scripts
+(namingly AERIoe)
+
+"""
+
+def getARMProfiles(rap_path, yyyymmdd, hh,  aeri_lon, aeri_lat, size, aerioe_hght):
+    # This is the function that is called to pull out the profiles from the 
+    # ARM RUC/RAP "syn" files contained in the rap_path directory.
+    # This code was moved here from the file get_ruca_prior.py on 3/26/2014
+    print rap_path + "/*syn*" + yyyymmdd + '.' + hh + '*.cdf'
+    files = glob.glob(rap_path.strip() + '/*syn*' + yyyymmdd + '.' + hh + '*.cdf') 
+    aeri_lon = float(aeri_lon)
+    aeri_lat = float(aeri_lat)     
+    size = int(size)
+
+    try:
+        d = Dataset(files[0])
+    except:
+        print "Unable to find ARM data to generate prior."
+        print "ARM RAP/RUC \"syn\" data needs to be in the directory: " + rap_path
+        print "For the date and hour of: " + yyyymmdd + ' ' + hh + ' UTC'
+        sys.exit()
+    
+    lon = d.variables['longitude'][:]
+    lat = d.variables['latitude'][:]
+    #print d.variables.keys()
+    idy, idx = find_index_of_nearest_xy(lon, lat, aeri_lon, aeri_lat)
+    
+    pres = d.variables['pressurepgrid'][:]
+    temp =  d.variables['tempp'][0,idy-size:idy+size,idx-size:idx+size,:]
+    rh = d.variables['rhp'][0,idy-size:idy+size,idx-size:idx+size,:]
+    hght = d.variables['heightgpp'][0,idy-size:idy+size,idx-size:idx+size,:]
+    sfc_pres = d.variables['pressuresrf'][0,idy-size:idy+size,idx-size:idx+size]/100.
+    sfc_hght = d.variables['heightsrf'][idy-size:idy+size,idx-size:idx+size]
+    sfc_temp = d.variables['temp2m'][0,idy-size:idy+size,idx-size:idx+size]
+    sfc_rh = d.variables['rh2m'][0,idy-size:idy+size,idx-size:idx+size]
+    
+    d.close()
+    mxrs = []
+    temps = []
+    press = []
+    print "sfc_hght.shape: ", sfc_hght.shape
+    for index, x in np.ndenumerate(sfc_hght):
+        idx_aboveground = np.where(sfc_hght[index] < hght[index[0], index[1],:])[0]
+ 
+        new_hght = (np.hstack((sfc_hght[index]+2, hght[index[0], index[1], idx_aboveground])) - sfc_hght[index])/1000.
+        new_temp = np.hstack((sfc_temp[index], temp[index[0], index[1], idx_aboveground]))
+        new_rh = np.hstack((sfc_rh[index], rh[index[0], index[1], idx_aboveground]))
+        new_pres = np.hstack((sfc_pres[index], pres[idx_aboveground]))
+        new_q = rh2q(new_temp, new_pres*100., new_rh/100.)*1000.
+        oe_mxr = np.interp(aerioe_hght, new_hght, new_q)
+        oe_temp = np.interp(aerioe_hght, new_hght, new_temp)
+        oe_pres = np.interp(aerioe_hght, new_hght, new_pres)
+        mxrs.append(oe_mxr)
+        temps.append(oe_temp)
+        press.append(new_pres)
+    temps = np.asarray(temps)
+    mxrs = np.asarray(mxrs)
+    type = files[0].split('/')[-1].split('.')[0]   
+ 
+    return temps, mxrs, press, type, files[0]
+
+"""
+def getMotherlodeProfiles(yyyymmddhh, time_window):
+    #This function is used to check for recent RAP data on the Motherlode server
+    #This is the function that should be called if we need to run AERIoe in real-time.
+
+    recent_rap_path = 'http://thredds.ucar.edu/thredds/dodsC/grib/NCEP/RAP/CONUS_13km/files/RR_CONUS_13km_' + \
+        yyyymmddhh[:8] + '_' + yyyymmddhh[8:10] + '00.grib2'
+
+    try:
+        d = Dataset(recent_rap_path)
+        print "Found RAP data for this date on the Motherlode UCAR server."
+        type = "RAP"
+        path = rap_path
+    except:
+        print "No RAP data found for this date on the Motherlode UCAR server."
+        return None
+
+    pres = d.variables['isobaric'][:] #Pascals
+    temp =  d.variables['Temperature_isobaric'][:time_window,:,idy-size:idy+size,idx-size:idx+size] # 
+    rh = d.variables['Relative_humidity_isobaric'][:time_window,:,idy-size:idy+size,idx-size:idx+size]
+    hght = d.variables['Geopotential_height_isobaric'][:time_window,:,idy-size:idy+size,idx-size:idx+size]
+    
+    sfc_pres = d.variables['Pressure_surface'][:time_window, 0, idy-size:idy+size,idx-size:idx+size]  #Pascals
+    sfc_hght = d.variables['Geopotential_height_surface'][:time_window, 0, idy-size:idy+size,idx-size:idx+size]
+    sfc_temp = d.variables['Temperature_height_above_ground'][:time_window,0,idy-size:idy+size,idx-size:idx+size]
+    sfc_rh = d.variables['Relative_humidity_height_above_ground'][:time_window,0,idy-size:idy+size,idx-size:idx+size]
+    
+    d.close()
+    
+    mxrs = []
+    temps = []
+    press = []
+
+    for t in range(len(temp)):
+        for index, x in np.ndenumerate(sfc_hght):
+            idx_aboveground = np.where(sfc_hght[index] < hght[:,index[0], index[1]])[0]
+            new_hght = (np.hstack((sfc_hght[index]+2, hght[idx_aboveground,index[0], index[1]])) - sfc_hght[index])/1000.
+            new_temp = np.hstack((sfc_temp[index], temp[idx_aboveground,index[0], index[1]]))
+            new_rh = np.hstack((sfc_rh[index], rh[idx_aboveground,index[0], index[1]]))
+            new_pres = np.hstack((sfc_pres[index], pres[idx_aboveground]))
+        
+            new_q = rh2q(new_temp, new_pres, new_rh/100.)*1000.
+        
+            oe_mxr = np.interp(aerioe_hght, new_hght, new_q)
+            oe_temp = np.interp(aerioe_hght, new_hght, new_temp)
+            oe_pres = np.interp(aerioe_hght, new_hght, new_pres)
+            mxrs.append(oe_mxr)
+            temps.append(oe_temp)
+            press.append(new_pres)
+    
+        temps = np.asarray(temps)
+        mxrs = np.asarray(mxrs)
+    
+    return temps, mxrs, press, type, path
+"""
+
+#This function searches for the RAP/RUC forecast data on the NOMADS THREDDS SERVER and builds a prior from it.
+def getHourlyProfiles(yyyymmddhh, fff, aeri_lat, aeri_lon, size, aerioe_hght):
+    #This function is used if the RAP data cannot be found on the Motherlode server.
+
+    rap_path = 'http://nomads.ncdc.noaa.gov/thredds/dodsC/rap130/' + yyyymmddhh[:6] + '/' + yyyymmddhh[:8] + \
+        '/rap_130_' + yyyymmddhh[:8] + '_' + yyyymmddhh[8:10] + '00_' + fff + '.grb2'
+    
+    ruc_path = 'http://nomads.ncdc.noaa.gov/thredds/dodsC/ruc252/' + yyyymmddhh[:6] + '/' + yyyymmddhh[:8] + \
+        '/ruc2_252_' + yyyymmddhh[:8] + '_' + yyyymmddhh[8:10] + '00_' + fff + '.grb'
+    
+    found = False
+    for i in range(1,6):
+        try:
+            print "Attempting to find: " + rap_path
+            d = Dataset(rap_path)
+            print "RAP 13 km data found."
+            type = "RAP13km"
+            path = rap_path
+            latlon_path = '13km_latlon.nc'
+            found = True
+            break
+        except:
+            print "Unable to find data on attempt " + str(i)
+            continue
+    if found == False:
+        for i in range(1,6):
+            try:
+                print "RAP data not found."
+                print "Attempting to find: " + ruc_path
+                d = Dataset(ruc_path)
+                print "RUC 20 km data found."
+                type = "RUC20km"
+                path = ruc_path
+                latlon_path = '20km_latlon.nc'
+                found = True
+                break
+            except:
+                print "Unable to find data on attempt " + str(i)
+                continue
+
+    if found == False:
+        print "Data not found on the server, aborting."
+        print yyyymmddhh + 'F' + fff
+        print "\n"
+        print "Maybe you should try using a GFS/CFS based prior instead?"
+        sys.exit()
+
+    try:
+        pres = d.variables['pressure'][:]
+    except:
+        pres = d.variables['isobaric'][:]*100.
+    
+    ll = Dataset(latlon_path)
+    lon = ll.variables['lon'][:]
+    lat = ll.variables['lat'][:]
+    idy, idx = find_index_of_nearest_xy(lon, lat, aeri_lon, aeri_lat)
+    size = int(size)
+    temp =  d.variables['Temperature'][0,:,idy-size:idy+size,idx-size:idx+size]
+    rh = d.variables['Relative_humidity'][0,:,idy-size:idy+size,idx-size:idx+size]
+    hght = d.variables['Geopotential_height'][0,:,idy-size:idy+size,idx-size:idx+size]
+    
+    sfc_pres = d.variables['Pressure_surface'][0,idy-size:idy+size,idx-size:idx+size]
+    sfc_hght = d.variables['Geopotential_height_surface'][0,idy-size:idy+size,idx-size:idx+size]
+    sfc_temp = d.variables['Temperature_height_above_ground'][0,0,idy-size:idy+size,idx-size:idx+size]
+    sfc_rh = d.variables['Relative_humidity_height_above_ground'][0,0,idy-size:idy+size,idx-size:idx+size]
+    
+    d.close()
+    
+    mxrs = []
+    temps = []
+    press = []
+    rhs = []
+
+    for index, x in np.ndenumerate(sfc_hght):
+        idx_aboveground = np.where(sfc_hght[index] < hght[:,index[0], index[1]])[0]
+
+        new_hght = (np.hstack((sfc_hght[index]+2, hght[idx_aboveground, index[0], index[1]])) - sfc_hght[index])/1000.
+        new_temp = np.hstack((sfc_temp[index], temp[idx_aboveground, index[0], index[1]]))
+        new_rh = np.hstack((sfc_rh[index], rh[idx_aboveground, index[0], index[1]]))
+        new_pres = np.hstack((sfc_pres[index], pres[idx_aboveground]))
+                
+        new_q = rh2q(new_temp, new_pres, new_rh/100.)*1000.
+        
+        oe_mxr = np.interp(aerioe_hght, new_hght, new_q)
+        oe_temp = np.interp(aerioe_hght, new_hght, new_temp)
+        oe_pres = np.interp(aerioe_hght, new_hght, new_pres)
+        oe_rh = np.interp(aerioe_hght, new_hght, new_rh)
+        mxrs.append(oe_mxr)
+        temps.append(oe_temp)
+        press.append(new_pres)
+        rhs.append(oe_rh)
+
+    temps = np.asarray(temps)
+    mxrs = np.asarray(mxrs)
+    rhs = np.asarray(rhs)
+
+    return temps, mxrs, press, type, path
+
+
+# This function is used to find the nearest point on the grid to the AERI location
+def find_index_of_nearest_xy(y_array, x_array, y_point, x_point):
+    distance = (y_array-y_point)**2 + (x_array-x_point)**2
+    idy,idx = np.where(distance==distance.min())
+    return idy[0],idx[0]
+
+# This is used to convert between the relative humidity grid that is stored in the
+# model grids to mixing ratio (which is what we need for the prior)
+def rh2q(temp, pres, rh):
+    Rv = 461.
+    L = 2.453 * 10**6
+    es = 6.11 * np.exp((L/Rv)*((1./(273.15)) - (1./temp)))
+    e = rh * es
+    q = (0.622*e) / ((pres/100.) - e)
+    return q
+
+
+# This the code that gets called by run_prior_gen.py when we want to make a prior out of the
+# ARM RUC/RAP MODEL DATA.
+def getARMModelPrior(model_data_path, climo_prior, yyyymmdd, size, hh, hh_delta, aeri_lon, aeri_lat):
+    print "This prior is centered at: " + str(aeri_lat) + ',' + str(aeri_lon)
+
+    climo = Dataset(climo_prior)
+    aerioe_hght = climo.variables['height'][:]
+
+    dt = datetime.strptime(yyyymmdd + hh, '%Y%m%d%H') - timedelta(seconds=int(hh_delta)*60*60)
+    end_dt = datetime.strptime(yyyymmdd + hh, '%Y%m%d%H') + timedelta(seconds=int(hh_delta)*60*60)
+    timed = timedelta(seconds=(60*60))
+
+    all_temps = None
+    all_mxrs = None
+    all_pres = None
+    print "Gathering profiles within a " + str(2*size) + "x" + str(2*size) + " grid."
+    types = []
+    paths = []
+
+    while dt < end_dt:
+        yyyymmdd = datetime.strftime(dt, '%Y%m%d')
+        hour = datetime.strftime(dt, '%H')
+        print "Gathering profiles from" + yyyymmdd + " @ " + hour
+        temp, mxr, pres, type, link = getARMProfiles(model_data_path, yyyymmdd, hour, aeri_lon, aeri_lat, size, aerioe_hght)
+        paths.append(link)
+        types.append(type)
+        if all_temps is None:
+            all_temps = temp
+            all_mxrs = mxr
+            #all_pres = pres
+        else:
+            all_temps = np.vstack((all_temps, temp))
+            all_mxrs = np.vstack((all_mxrs, mxr))
+            #all_pres = np.vstack((all_pres, pres))
+        dt = dt + timed
+
+    all_temps = all_temps - 273.15
+    print paths, types
+    print "Shape of the temperature profiles: ", all_temps.shape
+    print "Shape of the water vapor mixing ratio profiles: ", all_temps.shape
+    priors = np.hstack((all_temps, all_mxrs))
+    
+    print "Shape of the prior: ", priors.shape
+    mean = np.mean(priors, axis=0)
+    print "Xa: ", mean.shape
+    cov = np.cov(priors.T)
+    print "Sa: ", cov.shape
+ 
+    return mean, cov, climo, types, paths, yyyymmdd, hh, priors.shape[0]
+
+# This is the code that gets called by run_prior_gen.py when we want to make a prior from
+# ONLINE RUC/RAP data.
+def getOnlineModelPrior(climo_prior, yyyymmdd, size, hh, hh_delta, aeri_lon, aeri_lat):
+    #Load in latitude and longitude points for the RAP/RUC 13 km grid.
+
+    print "This prior is centered at: " + str(aeri_lat) + ',' + str(aeri_lon)
+    
+    #Get the nearest grid point to the AERI location.
+
+    climo = Dataset(climo_prior)
+    aerioe_hght = climo.variables['height'][:]
+
+    dt = datetime.strptime(yyyymmdd + hh, '%Y%m%d%H') - timedelta(seconds=int(hh_delta)*60*60)
+
+    all_temps = None
+    all_mxrs = None
+    all_pres = None
+    print "Gathering profiles within a " + str(2*size) + "x" + str(2*size) + " grid."
+    types = []
+    paths = []
+    for i in range(0, int(hh_delta)*2,1):
+        dt_string = datetime.strftime(dt, '%Y%m%d%H')
+        forecast_hour = (3-len(str(i)))*'0' + str(i) 
+        print "Gathering profiles for model run on " + dt_string + " F" + forecast_hour
+        # This only searches the NOMADS THREDDS Server
+        temp, mxr, pres, type, link = getHourlyProfiles(dt_string, forecast_hour, aeri_lat, aeri_lon, size, aerioe_hght)
+        paths.append(link)
+        types.append(type)
+        
+        if all_temps is None:
+            all_temps = temp
+            all_mxrs = mxr
+            #all_pres = pres
+        else:
+            all_temps = np.vstack((all_temps, temp))
+            all_mxrs = np.vstack((all_mxrs, mxr))
+            #all_pres = np.vstack((all_pres, pres))
+
+    all_temps = all_temps - 273.15
+    print paths, types
+    print "Shape of the temperature profiles: ", all_temps.shape
+    print "Shape of the water vapor mixing ratio profiles: ", all_temps.shape
+    priors = np.hstack((all_temps, all_mxrs))
+    
+    print "Shape of the prior: ", priors.shape
+    mean = np.mean(priors, axis=0)
+    print "Xa: ", mean.shape
+    cov = np.cov(priors.T)
+    print "Sa: ", cov.shape
+ 
+    return mean, cov, climo, types, paths, yyyymmdd, hh, priors.shape[0]
+
+def inflatePrior(cov, sfc_multiplier, top, height, profile_type):
+    if profile_type == -1:
+        return cov
+
+    #Get the index that corresponds to the top of the inflation  
+    top_idx = np.argmin(np.abs(height - top))
+    #std = cov
+    D = np.sqrt(np.diag(cov))
+    Dinv = np.linalg.inv(np.diag(D))
+    corr = np.dot(Dinv, np.dot(cov, Dinv))
+
+    #contourf(corr, np.arange(-1,1.1,.1), cmap=get_cmap('RdBu'))
+    #colorbar()
+    #show()
+    sfc_multiplier = np.linspace(sfc_multiplier, 1, top_idx)
+    print sfc_multiplier.shape
+
+    if profile_type == 0:
+        #Inflate only the temperature standard deviation
+        
+        D[:top_idx] = D[:top_idx] * sfc_multiplier
+        print "Inflating Temp"
+
+    if profile_type == 1:
+        #Inflate only the water vapor mixing ratio standard deviation
+        D[len(D)/2:len(D)/2 + top_idx] = D[len(D)/2:len(D)/2 + top_idx] * sfc_multiplier 
+
+    if profile_type == 2:
+        #Inflate both the temperature and WVMR standard deviations
+        D[len(D)/2:len(D)/2 + top_idx] = D[len(D)/2:len(D)/2 + top_idx] * sfc_multiplier 
+        D[:top_idx] = D[:top_idx] * sfc_multiplier
+    D = np.diag(D)
+    cov = np.dot(D, np.dot(corr,D))
+
+    return cov
+
+def makeFile(mean, cov, dir, types, yyyymmdd, hh, paths, climo, size, t_size, n, aeri_lat, aeri_lon):
+    print "Xa: ", mean.shape
+    print "Sa: ", cov.shape
+    
+    priorCDF_filename = dir.strip() + '/Xa_Sa_datafile.55_levels.' + yyyymmdd + '.' + hh + '.' + types[0] + '.' + str(aeri_lat) + '.' + str(aeri_lon) + '.cdf'
+    print "Saving prior file as: " + priorCDF_filename
+
+    data = Dataset(priorCDF_filename, 'w', 'NETCDF3_CLASSIC')
+
+    data.Date_created = datetime.strftime(datetime.now(), '%a %b %d %H:%M:%S %Y')
+    data.Version = 'get_model_prior.py'
+    data.Machine_used = platform.platform()
+    data.model = "RUC/RAP"
+    data.LBL_HOME = climo.LBL_HOME
+    data.Standard_atmos = climo.Standard_atmos
+    data.QC_limits_T = climo.QC_limits_T
+    data.QC_limits_q = climo.QC_limits_q
+    data.Comment = "Prior generated using model (" + types[0] + ") data."
+    #Need to include the web links to the data used to produce these files
+    #Need to include the times used to produce this file.
+    data.Nsonde = str(n) + ' profiles were included in the computation of this prior dataset.'
+    data.lat = aeri_lat
+    data.lon = aeri_lon
+    data.paths = '; '.join(paths)
+    data.model_types = '; '.join(types)
+    data.domain_size = str(2*size) + "x" + str(2*size)
+    data.temporal_size = t_size
+    data.grid_spacing = '13 km'
+
+    print data.Date_created
+
+    data.createDimension('height', len(mean)/2)
+    data.createDimension('wnum', len(climo.variables['wnum'][:]))
+    data.createDimension('height2', len(mean))
+
+    var = data.createVariable('mean_pressure', 'f4', ('height',))
+    var[:] = climo.variables['mean_pressure'][:]
+    var.units = climo.variables['mean_pressure'].units
+    var.long_name = climo.variables['mean_pressure'].long_name
+
+    var = data.createVariable('height', 'f4', ('height',))
+    var[:] = climo.variables['height'][:]
+    var.units = climo.variables['height'].units
+    var.long_name = climo.variables['height'].long_name
+
+    var = data.createVariable('mean_temperature', 'f4', ('height',))
+    var[:] = mean[:55]
+    var.units = climo.variables['mean_temperature'].units
+    var.long_name = climo.variables['mean_temperature'].long_name
+
+    var = data.createVariable('mean_mixingratio', 'f4', ('height',))
+    var[:] = mean[55:]
+    var.units = climo.variables['mean_mixingratio'].units
+    var.long_name = climo.variables['mean_mixingratio'].long_name
+
+    var = data.createVariable('height2', 'f4', ('height2',))
+    var[:] = climo.variables['height2'][:]
+    var.units = climo.variables['height2'].units
+    var.long_name = climo.variables['height2'].long_name
+
+    var = data.createVariable('wnum', 'f4', ('wnum',))
+    var[:] = climo.variables['wnum'][:]
+    var.units = climo.variables['wnum'].units
+    var.long_name = climo.variables['wnum'].long_name
+
+    var = data.createVariable('delta_od', 'f4', ('wnum',))
+    var[:] = climo.variables['delta_od'][:]
+    var.units = climo.variables['delta_od'].units
+    var.long_name = climo.variables['delta_od'].long_name
+
+    var = data.createVariable('radiance_true', 'f4', ('wnum',))
+    var[:] = climo.variables['radiance_true'][:]
+    var.units = climo.variables['radiance_true'].units
+    var.long_name = climo.variables['radiance_true'].long_name
+
+    var = data.createVariable('radiance_fast', 'f4', ('wnum',))
+    var[:] = climo.variables['radiance_fast'][:]
+    var.units = climo.variables['radiance_fast'].units
+    var.long_name = climo.variables['radiance_fast'].long_name
+
+    var = data.createVariable('mean_prior', 'f4', ('height2',))
+    var[:] = mean
+    var.units = climo.variables['mean_prior'].units
+    var.long_name = climo.variables['mean_prior'].long_name
+
+    var = data.createVariable('covariance_prior', 'f4', ('height2','height2',))
+    var[:] = cov
+    var.units = climo.variables['covariance_prior'].units
+    var.long_name = climo.variables['covariance_prior'].long_name
+
+    climo.close()
+    
+    return priorCDF_filename
+
+def main():
+    sfc_mutiplier = 3
+    yyyymmdd = '20130531'
+    hour = '12'
+    print "Testing RUC time frame"
+    mean, cov, climo, type, path, yyyymmdd, hh, n = getModelPrior('prior_data/Xa_Sa_datafile.55_levels.month_05.cdf', yyyymmdd, 10, hour, 3) 
+    fig = figure(figsize=(12,6))
+    subplot(121)
+    title("W/O Inflation " + yyyymmdd + ' ' + hour)
+    contourf(cov, np.arange(-14,15,1), cmap=get_cmap('RdBu'), extend='both')
+    axvline(x=55, c='k')
+    axhline(y=55, c='k')
+    
+    top = 3
+    d = Dataset('prior_data/Xa_Sa_datafile.55_levels.month_05.cdf')
+    height = d.variables['height'][:]
+    d.close()
+    profile_type = 2
+    new_cov = inflatePrior(cov, sfc_mutiplier, top, height, profile_type)
+    subplot(122)
+    title("Inflation " + yyyymmdd + ' ' + hour)
+    im = contourf(new_cov, np.arange(-14,15,1), cmap=get_cmap('RdBu'), extend='both')
+    axvline(x=55, c='k')
+    axhline(y=55, c='k')
+    fig.subplots_adjust(right=0.8)
+    cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
+    fig.colorbar(im, cax=cbar_ax)
+    show()
+    stop
+    print "Testing RUC time frame"
+    getModelPrior('prior_data/Xa_Sa_datafile.55_levels.month_08.cdf', "20110103", 10, "12", 3)
+
+if __name__ == '__main__':
+    main()
+

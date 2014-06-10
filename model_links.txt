@@ -1,0 +1,7 @@
+REAL-TIME 13 km RAP - http://thredds.ucar.edu/thredds/dodsC/grib/NCEP/RAP/CONUS_13km/files/RR_CONUS_13km_YYYYMMDD_HH00.grib2 - 0,23
+HISTORICAL 13km RAP - http://nomads.ncdc.noaa.gov/thredds/dodsC/rap130/YYYYMM/YYYYMMDD/rap_130_YYYYMMDD_HH00_0FF.grb2 - 0,23
+HISTORICAL 13km RUC - http://nomads.ncdc.noaa.gov/thredds/dodsC/ruc130/YYYYMM/YYYYMMDD/ruc2_130_YYYYMMDD_HH00_0FF.grb2 - 0,23
+
+REAL-TIME 0.5 GFS - http://thredds.ucar.edu/thredds/dodsC/grib/NCEP/GFS/Global_0p5deg/files/GFS_Global_0p5deg_YYYYMMDD_HH00.grib2 - 0,6,12,18
+CFS Reanalysis 0.5 - http://nomads.ncdc.noaa.gov/thredds/dodsC/modeldata/cmd_pgbh/YYYY/YYYYMM/YYYYMMDD/pgbh06.gdas.YYYYMMDDHH.grb2 - 0,6,12,18
+
