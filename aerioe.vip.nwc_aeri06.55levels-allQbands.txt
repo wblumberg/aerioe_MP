@@ -1,0 +1,74 @@
+#
+# The input parameter file for the AERIoe retrieval
+#
+# Note that lines that start with a "#" are ignored
+# The keys on the left of the "=" are important, and will be matched by the same
+#    strings in the VIP structure.  The values on the right of the = are the values
+#
+tres    	= 5		; Temporal resolution [min], 0 implies native AERI temporal resolution
+tag     	= nwcroof	; String for temporary files / directories
+#
+# This section defines the data directories, file types, and more
+aeri_type       = 3		; 1 - ARM AERI data, 2 - dmv2cdf AERI data
+aerich1_path    = /raid/FRDD/Dave.Turner/data/norman/aeri/aeri-06/nf/nfch1
+aerisum_path    = /raid/FRDD/Dave.Turner/data/norman/aeri/aeri-06/nf/rawsum
+aerieng_path    = /raid/FRDD/Dave.Turner/data/norman/aeri/aeri-06/nf/rawsum
+aeri_lat        = 35.18138 	; AERI latitude  [degN]; will override info in AERI file is "alt" here is positive
+aeri_lon        = -97.43973	; AERI longitude [degE]; will override info in AERI file is "alt" here is positive
+aeri_alt        = 370.		; AERI altitude [m MSL]; will override info in AERI file is "alt" here is positive
+aeri_calib_pres = 5.0, 1.0	; Intercept [mb] and slope to calib (newP = int + slope*obsP)
+aeri_fv         = 0.0		; Apply a foreoptics obscuration correction
+aeri_fa         = 0.0		; Apply an aftoptics obscuration correction
+mwr_type        = 1		; 1 - MWRLOS, 2 - MWRRETv1, 3 - MWRRETv2
+mwr_path        = /raid/FRDD/Dave.Turner/data/norman/aeri/aeri-06/../../mwr/netcdf/missing
+cbh_type        = 2		; 1 - VCEIL, 2 - Gregs ASOS/AWOS CBH file
+cbh_path        = /raid/FRDD/Dave.Turner/data/norman/aeri/aeri-06/../../awos_ceil/netcdf
+cbh_window_in	=  20		; Inner full-width window size to look for cloud values [min]
+cbh_window_out	= 180		; Outer full-width window size to look for cloud values [min]
+cbh_default_ht  = 2.0		; Default CBH, if no CBH data found [km AGL]
+output_rootname = ounaerioe1turnC1.c1
+output_path     = /raid/FRDD/Dave.Turner/data/norman/aeri/aerioe-06/run_sonde_times.55levels-allQbands
+output_clobber  = 0		; 0 - do not clobber any existing file, 1 - clobber it
+#
+# Information on the LBLRTM version to use
+lbl_home        = /Users/daveturner/vip/src/lblrtm_v12.1/lblrtm
+lbl_version     = 12.1
+lbl_temp_dir	= ./tmp/crap	; Use relative path
+#
+# Options for the Jacobian
+jac_option      = 3	; 1 - LBLRTM Finite Diffs, 2 - 3calc method, 3 - deltaOD method
+jac_max_ht      = 8.0	; Maximum height to compute the Jacobian [km AGL]
+#
+# Options for running the retrieval
+max_iterations  = 10	; Maximum number of iterations to use (must be >= 1)
+first_guess     = 1	; 1 - use prior as FG, 2 - use Tsfc/lapse/constRH as first guess, 3 - use previous sample as FG
+spectral_bands  = 612-618, 624-660, 674-713, 538-588, 860.1-864.0, 872.2-877.5, 898.2-905.4, 1250-1350
+retrieve_ch4    = 0	; 0 - do not retrieve ch4, 1 - do retrieve ch4
+retrieve_n2o    = 0	; 0 - do not retrieve n2o, 1 - do retrieve n2o
+retrieve_co2    = 0	; 0 - do not retrieve co2, 1 - do retrieve co2
+retrieve_lcloud = 1	; 0 - do not retrieve liquid clouds, 1 - retrieve cloud properties
+retrieve_icloud = 0	; 0 - do not retrieve   ice  clouds, 1 - retrieve cloud properties
+lcloud_ssp      = ./ssp_db.mie_wat.gamma_sigma_0p100
+icloud_ssp      = ./ssp_db.mie_ice.gamma_sigma_0p100
+#
+# Information on the a priori
+prior_co2_mn   = -1 	; 0 - use simple model, > 1 is the concentration [ppm]
+prior_co2_sd   = 10.	; 1-sigma uncertainty in co2 [ppm]
+prior_ch4_mn   = 1.793	; Mean ch4 concentration [ppm]
+prior_ch4_sd   = 0.0538 ; 1-sigma uncertainty in ch4 [ppm]
+prior_n2o_mn   = 0.310  ; Mean n2o concentration [ppm]
+prior_n2o_sd   = 0.0093 ; 1-sigma uncertainty in n2o [ppm]
+prior_lwp_mn   = 0.	; Mean LWP [g/m2]
+prior_lwp_sd   = 50.0	; 1-sigma uncertainty in LWP [g/m2]
+prior_lReff_mn = 8.0	; Mean liquid Reff [microns]
+prior_lReff_sd = 4.0	; 1-sigma uncertainty in liquid Reff [microns]
+prior_itau_mn  = 0.0	; Mean ice cloud optical depth (geometric limit)
+prior_itau_sd  = 0.0	; 1-sigma uncertainty in ice cloud optical depth
+prior_iReff_mn = 25.0	; Mean ice cloud Reff [microns] 
+prior_iReff_sd =  8.0	; 1-sigma uncertainty in ice cloud Reff [Reff]
+#
+# Global attributes for the output netCDF file (must start with "globatt_")
+globatt_Site = National Weather Center Rooftop, Norman OK (OUN)
+globatt_Instrument = DOE ARM AERI-06
+globatt_Dataset_contact = Dave Turner, NOAA/NSSL, dave.turner@noaa.gov
+# END of FILE

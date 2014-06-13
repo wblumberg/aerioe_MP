@@ -246,6 +246,9 @@ cur_dt = min_dts
 
 retr_processes = []
 
+out_dir = findVIPVariable('output_path', vip)
+out_name = findVIPVariable('output_rootname', vip)
+
 # This is like the above loop where we loop through all the hours of the retrieval,
 # but we are spawning IDL AERIoe processes for each hour.
 while cur_dt < max_dts:
@@ -267,6 +270,12 @@ while cur_dt < max_dts:
 
     if next_hour == '00':
         next_hour = 24
+
+    # Check to see if this file already exists
+    existing_fns = np.sort(glob.glob(out_dir + '/' + out_name + '*' + date + '.' + hour + '*.cdf'))
+    if len(existing_fns) > 0:
+        print "A retrieval file with the date:", date, " and hour:", hour, " already exists."
+        continue    
 
     # Spawn the IDL AERIoe process
     p = runOE(date, vip, files[0], hour, int(next_hour))

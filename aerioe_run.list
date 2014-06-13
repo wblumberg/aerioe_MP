@@ -1,0 +1,21 @@
+# Here are more runs to be made (this is for the DFW AERI experiment)
+20
+
+
+#END
+
+
+
+#Here is a list of runs to make (this will be started on 2/19/2014)
+20120414,aerioe.vip.SGP.vceil.55levels.sprior.txt,00,00
+20120415,aerioe.vip.SGP.vceil.55levels.sprior.txt,00,12
+20120413,aerioe.vip.SGP.vceil.55levels.sprior.txt,00,00
+#END
+
+#Additional Runs Planned
+20001225,aerioe.vip.CF.vceil.55levels.txt,00,00
+20001225,aerioe.vip.purcell.vceil.55levels.txt,00,00
+20001225,aerioe.vip.vici.vceil.55levels.txt,00,00
+20001225,aerioe.vip.morris.vceil.55levels.txt,00,00
+20001225,aerioe.vip.hillsboro.vceil.55levels.txt,00,00
+
