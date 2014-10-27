@@ -108,7 +108,7 @@ cur_dt = datetime.strptime(yyyymmdd + hour, '%Y%m%d%H')
 
 date = datetime.strftime(cur_dt, '%Y%m%d')
 hour = datetime.strftime(cur_dt, '%H')
-print "Generating prior for: " + date + " " + hour
+#print "Generating prior for: " + date + " " + hour
 if prior_type == 1:
     mean, cov, climo, types, paths, date, hour, n = gmp.getOnlineModelPrior(climo_file, date, prior_spatial, hour, prior_temporal, lon, lat)
 elif prior_type == 2:

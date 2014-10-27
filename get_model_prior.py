@@ -21,8 +21,13 @@ def getARMProfiles(rap_path, yyyymmdd, hh,  aeri_lon, aeri_lat, size, aerioe_hgh
     # This is the function that is called to pull out the profiles from the 
     # ARM RUC/RAP "syn" files contained in the rap_path directory.
     # This code was moved here from the file get_ruca_prior.py on 3/26/2014
-    print rap_path + "/*syn*" + yyyymmdd + '.' + hh + '*.cdf'
+    #print rap_path + "/*syn*" + yyyymmdd + '.' + hh + '*.cdf'
+    print "\tSearching for \"syn\" files."
     files = glob.glob(rap_path.strip() + '/*syn*' + yyyymmdd + '.' + hh + '*.cdf') 
+    if len(files) == 0:
+        print "\tNone, searching for \"all\" files."
+        files = glob.glob(rap_path.strip() + '/*all*' + yyyymmdd + '.' + hh + '*.cdf') 
+    
     aeri_lon = float(aeri_lon)
     aeri_lat = float(aeri_lat)     
     size = int(size)
@@ -30,11 +35,13 @@ def getARMProfiles(rap_path, yyyymmdd, hh,  aeri_lon, aeri_lat, size, aerioe_hgh
     try:
         d = Dataset(files[0])
     except:
-        print "Unable to find ARM data to generate prior."
-        print "ARM RAP/RUC \"syn\" data needs to be in the directory: " + rap_path
-        print "For the date and hour of: " + yyyymmdd + ' ' + hh + ' UTC'
-        sys.exit()
-    
+        print "\t\tUnable to find ARM data to generate prior."
+        print "\t\tARM RAP/RUC \"syn\" data needs to be in the directory: " + rap_path
+        print "\t\tFor the date and hour of: " + yyyymmdd + ' ' + hh + ' UTC'
+        return [-9999],[-9999], [-9999], [-9999], [-9999]
+        #sys.exit()
+    print "\t\tFOUND DATA FOR PRIOR: " + files[0]
+        
     lon = d.variables['longitude'][:]
     lat = d.variables['latitude'][:]
     #print d.variables.keys()
@@ -53,7 +60,7 @@ def getARMProfiles(rap_path, yyyymmdd, hh,  aeri_lon, aeri_lat, size, aerioe_hgh
     mxrs = []
     temps = []
     press = []
-    print "sfc_hght.shape: ", sfc_hght.shape
+    #print "sfc_hght.shape: ", sfc_hght.shape
     for index, x in np.ndenumerate(sfc_hght):
         idx_aboveground = np.where(sfc_hght[index] < hght[index[0], index[1],:])[0]
  
@@ -71,7 +78,8 @@ def getARMProfiles(rap_path, yyyymmdd, hh,  aeri_lon, aeri_lat, size, aerioe_hgh
     temps = np.asarray(temps)
     mxrs = np.asarray(mxrs)
     type = files[0].split('/')[-1].split('.')[0]   
- 
+    #print temps.shape, mxrs.shape, np.asarray(press).shape, type, files[0]
+    
     return temps, mxrs, press, type, files[0]
 
 """
@@ -249,7 +257,7 @@ def rh2q(temp, pres, rh):
 # This the code that gets called by run_prior_gen.py when we want to make a prior out of the
 # ARM RUC/RAP MODEL DATA.
 def getARMModelPrior(model_data_path, climo_prior, yyyymmdd, size, hh, hh_delta, aeri_lon, aeri_lat):
-    print "This prior is centered at: " + str(aeri_lat) + ',' + str(aeri_lon)
+    print "This prior is spatially centered at: " + str(aeri_lat) + ',' + str(aeri_lon)
 
     climo = Dataset(climo_prior)
     aerioe_hght = climo.variables['height'][:]
@@ -257,19 +265,24 @@ def getARMModelPrior(model_data_path, climo_prior, yyyymmdd, size, hh, hh_delta,
     dt = datetime.strptime(yyyymmdd + hh, '%Y%m%d%H') - timedelta(seconds=int(hh_delta)*60*60)
     end_dt = datetime.strptime(yyyymmdd + hh, '%Y%m%d%H') + timedelta(seconds=int(hh_delta)*60*60)
     timed = timedelta(seconds=(60*60))
-
+    print "Will be searching for model netCDF files between: " + datetime.strftime(dt, '%Y-%m-%d %H') + ' and ' + datetime.strftime(end_dt, '%Y-%m-%d %H')
     all_temps = None
     all_mxrs = None
     all_pres = None
     print "Gathering profiles within a " + str(2*size) + "x" + str(2*size) + " grid."
     types = []
     paths = []
-
     while dt < end_dt:
         yyyymmdd = datetime.strftime(dt, '%Y%m%d')
         hour = datetime.strftime(dt, '%H')
-        print "Gathering profiles from" + yyyymmdd + " @ " + hour
+        print "\nGathering profiles from this date/time: " + yyyymmdd + " @ " + hour
         temp, mxr, pres, type, link = getARMProfiles(model_data_path, yyyymmdd, hour, aeri_lon, aeri_lat, size, aerioe_hght)
+        if len(temp) == 1:
+            print "\tWe weren't able to find any data from this date/time.  Let's skip it."
+            dt = dt + timed
+            continue
+        else:
+            print "\tWe were able to find data from this date/time.  Let's save it."
         paths.append(link)
         types.append(type)
         if all_temps is None:
@@ -281,18 +294,25 @@ def getARMModelPrior(model_data_path, climo_prior, yyyymmdd, size, hh, hh_delta,
             all_mxrs = np.vstack((all_mxrs, mxr))
             #all_pres = np.vstack((all_pres, pres))
         dt = dt + timed
-
+    
+    
     all_temps = all_temps - 273.15
-    print paths, types
-    print "Shape of the temperature profiles: ", all_temps.shape
-    print "Shape of the water vapor mixing ratio profiles: ", all_temps.shape
+    print "\nThese files were used in calculating this prior:"
+    for p in paths:
+        print '\t' + p
+    print "\nInformation about the profiles found:"
+    print "\tShape of the temperature profiles: ", all_temps.shape
+    print "\tShape of the water vapor mixing ratio profiles: ", all_temps.shape
+    if all_temps.shape[0] < 2000:
+        print "WARNING!  THERE ARE LESS THAN 2000 PROFILES FOR THIS PRIOR."
+        print "RUC/RAP ARM files are probably missing.  Canceling the generation of this prior."
+        sys.exit()
     priors = np.hstack((all_temps, all_mxrs))
     
-    print "Shape of the prior: ", priors.shape
     mean = np.mean(priors, axis=0)
-    print "Xa: ", mean.shape
+    print "Xa SHAPE: ", mean.shape
     cov = np.cov(priors.T)
-    print "Sa: ", cov.shape
+    print "Sa SHAPE: ", cov.shape
  
     return mean, cov, climo, types, paths, yyyymmdd, hh, priors.shape[0]
 
@@ -385,9 +405,6 @@ def inflatePrior(cov, sfc_multiplier, top, height, profile_type):
     return cov
 
 def makeFile(mean, cov, dir, types, yyyymmdd, hh, paths, climo, size, t_size, n, aeri_lat, aeri_lon):
-    print "Xa: ", mean.shape
-    print "Sa: ", cov.shape
-    
     priorCDF_filename = dir.strip() + '/Xa_Sa_datafile.55_levels.' + yyyymmdd + '.' + hh + '.' + types[0] + '.' + str(aeri_lat) + '.' + str(aeri_lon) + '.cdf'
     print "Saving prior file as: " + priorCDF_filename
 
@@ -413,7 +430,7 @@ def makeFile(mean, cov, dir, types, yyyymmdd, hh, paths, climo, size, t_size, n,
     data.temporal_size = t_size
     data.grid_spacing = '13 km'
 
-    print data.Date_created
+    print "Prior generation took place at: ", data.Date_created
 
     data.createDimension('height', len(mean)/2)
     data.createDimension('wnum', len(climo.variables['wnum'][:]))

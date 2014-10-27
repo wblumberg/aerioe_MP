@@ -8,6 +8,8 @@ import time
 from subprocess import call
 import glob
 import subprocess
+import socket
+import re
 
 ###########################################################################
 #
@@ -30,6 +32,8 @@ import subprocess
 
 #save_file = 'aerioe.idl_version_8p2.date_compiled_20140129.Release_1_1.sav'
 save_file = 'aerioe.idl_version_8p1.date_compiled_20140206.sav'
+
+now_dt = datetime.now()
 
 def convertTimeFormat(yyyymmdd, hhmm):
     delta = 1/60.
@@ -112,9 +116,7 @@ lon = findVIPVariable('aeri_lon', vip)
 
 if lat == -1 or lon == -1:
     print "Correcting for lat, lon...pulling lat lon from CH1 file."
-    print yyyymmdd[2:]
     data_path = findVIPVariable('aerich1_path', vip)
-    print data_path + '/*' + yyyymmdd[2:] + '*.cdf'
     files = glob.glob(data_path.strip() + '/*' + yyyymmdd[2:] + '*.cdf')
     if len(files) == 0:
         print "There aren't any files that have this date-time."
@@ -220,18 +222,18 @@ while cur_dt < max_dts:
     date = datetime.strftime(cur_dt, '%Y%m%d')
     hour = datetime.strftime(cur_dt, '%H')
     files = glob.glob(model_prior_dir.strip() + '/*.' + date + '.' + hour + '*')
-    print date + hour
+    #print date + hour
 
     if len(prior_processes) ==  num_retrs:
         prior_processes.pop(0).wait()
 
     if len(files) != 0:
         print "Prior file found for: " + date + ' ' + hour
-        print files[0]
+        print '\t' + "Prior file path: " + files[0]
         print "Skipping generation of this prior."
         cur_dt = cur_dt + hour_delta
         continue
-    print "Generating prior for: " + date + " " + hour
+    print "\n\n\nGenerating prior centered temporally on this date/time: " + date + " " + hour + " UTC"
     p = subprocess.Popen(['python', 'run_prior_gen.py', date, vip, hour, lat, lon])
     prior_processes.append(p)
     
@@ -255,7 +257,6 @@ out_name = findVIPVariable('output_rootname', vip)
 
 retr_processes = []
 while cur_dt < max_dts:
-     
     date = datetime.strftime(cur_dt, '%Y%m%d')
     hour = datetime.strftime(cur_dt, '%H')
     hourmin = datetime.strftime(cur_dt, '%H%M')
@@ -298,6 +299,55 @@ while cur_dt < max_dts:
 #Finish up the remaining processes
 for p in retr_processes:
     p.wait()
+
+###############################################################
+# Send the email to notify users that this retrieval is done! #
+###############################################################
+
+finished_dt = datetime.now()
+
+email_list = ['dave.turner@noaa.gov','greg.blumberg@noaa.gov']
+#email_list = ['greg.blumberg@noaa.gov']
+
+# Get a list of all the files for this date in the retrieval output directory
+proc = subprocess.Popen('ls -lha ' + out_dir.strip() + '/' + out_name.strip() + '*' + date + '*.cdf', shell=True, stdout=subprocess.PIPE)
+list_of_files = proc.stdout.read()
+existing_fns = np.sort(glob.glob(out_dir.strip() + '/' + out_name.strip() + '*' + date + '*.cdf'))
+
+# read in the VIP file
+fn = open(vip, 'r')
+vip_lines = fn.readlines()
+fn.close()
+
+email_text = vip_lines
+
+email_text.insert(0, '\n\nVIP FILE OUTPUT (from ' + vip + "):\n\n")
+# read in the computer name
+comp_name = socket.gethostname()
+
+email_subject = comp_name + ' run_AERIoe.py completed for: ' + date  + ' dataset'
+list_of_files = re.split('(\n)', list_of_files)
+email_text = list_of_files + email_text
+
+email_text.insert(0, "Here's a list of the files that were generated: \n")
+if len(existing_fns) == 24:
+    email_text.insert(0, "\n\nALL 24 RETRIEVALS ARE COMPLETE!\n\n")
+else:
+    email_text.insert(0, "\n\nALERT!  24 FILES NOT FOUND FOR THE DATE: " + date + '\n\n')
+
+email_text.insert(0, "Total Execution Time: " + str(finished_dt - now_dt) + '\n\n')
+email_text.insert(0, "End Date/Time: " + datetime.strftime(now_dt, '%Y-%m-%d %H:%M:%S UTC\n\n'))
+email_text.insert(0, "Start Date/Time: " + datetime.strftime(finished_dt, '%Y-%m-%d %H:%M:%S UTC\n\n'))
+
+fn = open('email_temp.txt', 'w')
+fn.writelines(email_text)
+fn.close()
+print email_list
+# Send the email
+for recipient in email_list:
+    print '/usr/bin/mail -s \"' + email_subject + '\" ' + recipient + ' < email_temp.txt'
+    subprocess.Popen('/usr/bin/mail -s \"' + email_subject + '\" ' + recipient + ' < email_temp.txt', shell=True)
+#subprocess.Popen('rm email_temp.txt', shell=True)
 
 print "RETRIEVALS DONE!"
 
