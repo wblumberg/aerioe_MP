@@ -183,8 +183,8 @@ else:
     # We're going to use the sonde climatology (the default) as our prior file
     print "Using sonde climatology as prior for AERIoe."
     prior_file = climo_file
-    bhour_fmt = convertTimeFormat(date, bhour + bmin)
-    ehour_fmt = convertTimeFormat(date, ehour + emin)
+    bhour_fmt = convertTimeFormat(yyyymmdd, bhour + bmin)
+    ehour_fmt = convertTimeFormat(yyyymmdd, ehour + emin)
  
     # Start the AERIoe run
     runOE(yyyymmdd, vip, prior_file, bhour_fmt, ehour_fmt)
@@ -281,7 +281,8 @@ while cur_dt < max_dts:
 
     if len(files) == 0:
 	    print "Prior file not found."
-	    sys.exit()
+        print "...trying the next retrieval in the queue."
+        continue
  
     # Check to see if this file maybe already exists
     existing_fns = np.sort(glob.glob(out_dir.strip() + '/' + out_name.strip() + '*' + date + '.' + hour + '*.cdf'))
@@ -306,8 +307,8 @@ for p in retr_processes:
 
 finished_dt = datetime.now()
 
-email_list = ['dave.turner@noaa.gov','greg.blumberg@noaa.gov']
-#email_list = ['greg.blumberg@noaa.gov']
+#email_list = ['dave.turner@noaa.gov','greg.blumberg@noaa.gov']
+email_list = ['greg.blumberg@noaa.gov']
 
 # Get a list of all the files for this date in the retrieval output directory
 proc = subprocess.Popen('ls -lha ' + out_dir.strip() + '/' + out_name.strip() + '*' + date + '*.cdf', shell=True, stdout=subprocess.PIPE)
