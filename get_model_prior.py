@@ -18,6 +18,7 @@ This script is ready to be used as a function in other scripts
 """
 
 def getARMProfiles(rap_path, yyyymmdd, hh,  aeri_lon, aeri_lat, size, aerioe_hght):
+    # THIS FUNCTION GETS CALLED BY getARMModelPrior() [this is defined below]
     # This is the function that is called to pull out the profiles from the 
     # ARM RUC/RAP "syn" files contained in the rap_path directory.
     # This code was moved here from the file get_ruca_prior.py on 3/26/2014
@@ -82,47 +83,56 @@ def getARMProfiles(rap_path, yyyymmdd, hh,  aeri_lon, aeri_lat, size, aerioe_hgh
     
     return temps, mxrs, press, type, files[0]
 
-"""
-def getMotherlodeProfiles(yyyymmddhh, time_window):
+def getMotherlodeProfiles(yyyymmddhh, time_window, aeri_lat, aeri_lon, size, aerioe_hght):
     #This function is used to check for recent RAP data on the Motherlode server
     #This is the function that should be called if we need to run AERIoe in real-time.
+    #
+    # THIS FUNCTION IS WORKING ON 2/24/2015
 
-    recent_rap_path = 'http://thredds.ucar.edu/thredds/dodsC/grib/NCEP/RAP/CONUS_13km/files/RR_CONUS_13km_' + \
-        yyyymmddhh[:8] + '_' + yyyymmddhh[8:10] + '00.grib2'
-
+    recent_rap_path = 'http://thredds.ucar.edu/thredds/dodsC/grib/NCEP/RAP/CONUS_13km/RR_CONUS_13km_' + \
+        yyyymmddhh[:8] + '_' + yyyymmddhh[8:10] + '00.grib2/GC'
+    print recent_rap_path
     try:
         d = Dataset(recent_rap_path)
-        print "Found RAP data for this date on the Motherlode UCAR server."
-        type = "RAP"
-        path = rap_path
+        print d.variables.keys()
+        print "Found 13 km RAP data for this date on the Motherlode UCAR server."
+        type = "RAP13km"
+        path = recent_rap_path
     except:
         print "No RAP data found for this date on the Motherlode UCAR server."
         return None
-
+    
+    ll = Dataset('13km_latlon.nc')
+    lon = ll.variables['lon'][:]
+    lat = ll.variables['lat'][:]
+    aeri_lon = float(aeri_lon)
+    aeri_lat = float(aeri_lat)
+    idy, idx = find_index_of_nearest_xy(lon, lat, aeri_lon, aeri_lat)
+    size = int(size)
     pres = d.variables['isobaric'][:] #Pascals
     temp =  d.variables['Temperature_isobaric'][:time_window,:,idy-size:idy+size,idx-size:idx+size] # 
     rh = d.variables['Relative_humidity_isobaric'][:time_window,:,idy-size:idy+size,idx-size:idx+size]
     hght = d.variables['Geopotential_height_isobaric'][:time_window,:,idy-size:idy+size,idx-size:idx+size]
+    sfc_pres = d.variables['Pressure_surface'][:time_window, idy-size:idy+size,idx-size:idx+size]  #Pascals
+    sfc_hght = ll.variables['Geopotential_height_surface'][idy-size:idy+size, idx-size:idx+size]
+    #sfc_hght = d.variables['Geopotential_height_surface'][:time_window, idy-size:idy+size,idx-size:idx+size]
+    sfc_temp = d.variables['Temperature_height_above_ground'][:time_window,0, idy-size:idy+size,idx-size:idx+size]
+    sfc_rh = d.variables['Relative_humidity_height_above_ground'][:time_window,0, idy-size:idy+size,idx-size:idx+size]
     
-    sfc_pres = d.variables['Pressure_surface'][:time_window, 0, idy-size:idy+size,idx-size:idx+size]  #Pascals
-    sfc_hght = d.variables['Geopotential_height_surface'][:time_window, 0, idy-size:idy+size,idx-size:idx+size]
-    sfc_temp = d.variables['Temperature_height_above_ground'][:time_window,0,idy-size:idy+size,idx-size:idx+size]
-    sfc_rh = d.variables['Relative_humidity_height_above_ground'][:time_window,0,idy-size:idy+size,idx-size:idx+size]
-    
+    ll.close()
     d.close()
     
     mxrs = []
     temps = []
     press = []
-
     for t in range(len(temp)):
         for index, x in np.ndenumerate(sfc_hght):
-            idx_aboveground = np.where(sfc_hght[index] < hght[:,index[0], index[1]])[0]
-            new_hght = (np.hstack((sfc_hght[index]+2, hght[idx_aboveground,index[0], index[1]])) - sfc_hght[index])/1000.
-            new_temp = np.hstack((sfc_temp[index], temp[idx_aboveground,index[0], index[1]]))
-            new_rh = np.hstack((sfc_rh[index], rh[idx_aboveground,index[0], index[1]]))
-            new_pres = np.hstack((sfc_pres[index], pres[idx_aboveground]))
-        
+            hght_prof = hght[t, :, index[0], index[1]]
+            idx_aboveground = np.where(sfc_hght[index] < hght_prof)[0]
+            new_hght = (np.hstack((sfc_hght[index]+2, hght[t, idx_aboveground, index[0], index[1]][::-1])) - sfc_hght[index])/1000.
+            new_temp = np.hstack((sfc_temp[t, index[0], index[1]], temp[t, idx_aboveground, index[0], index[1]][::-1]))
+            new_rh = np.hstack((sfc_rh[t, index[0], index[1]], rh[t, idx_aboveground, index[0], index[1]][::-1]))
+            new_pres = np.hstack((sfc_pres[t, index[0], index[1]], pres[idx_aboveground][::-1]))
             new_q = rh2q(new_temp, new_pres, new_rh/100.)*1000.
         
             oe_mxr = np.interp(aerioe_hght, new_hght, new_q)
@@ -132,11 +142,10 @@ def getMotherlodeProfiles(yyyymmddhh, time_window):
             temps.append(oe_temp)
             press.append(new_pres)
     
-        temps = np.asarray(temps)
-        mxrs = np.asarray(mxrs)
+    temps = np.asarray(temps)
+    mxrs = np.asarray(mxrs)
     
     return temps, mxrs, press, type, path
-"""
 
 #This function searches for the RAP/RUC forecast data on the NOMADS THREDDS SERVER and builds a prior from it.
 def getHourlyProfiles(yyyymmddhh, fff, aeri_lat, aeri_lon, size, aerioe_hght):
@@ -144,10 +153,10 @@ def getHourlyProfiles(yyyymmddhh, fff, aeri_lat, aeri_lon, size, aerioe_hght):
 
     rap_path = 'http://nomads.ncdc.noaa.gov/thredds/dodsC/rap130/' + yyyymmddhh[:6] + '/' + yyyymmddhh[:8] + \
         '/rap_130_' + yyyymmddhh[:8] + '_' + yyyymmddhh[8:10] + '00_' + fff + '.grb2'
-    
+    """
     ruc_path = 'http://nomads.ncdc.noaa.gov/thredds/dodsC/ruc252/' + yyyymmddhh[:6] + '/' + yyyymmddhh[:8] + \
         '/ruc2_252_' + yyyymmddhh[:8] + '_' + yyyymmddhh[8:10] + '00_' + fff + '.grb'
-    
+    """
     found = False
     for i in range(1,6):
         try:
@@ -276,6 +285,7 @@ def getARMModelPrior(model_data_path, climo_prior, yyyymmdd, size, hh, hh_delta,
         yyyymmdd = datetime.strftime(dt, '%Y%m%d')
         hour = datetime.strftime(dt, '%H')
         print "\nGathering profiles from this date/time: " + yyyymmdd + " @ " + hour
+        # THE FIRST FUNCTION ABOVE GETS CALLED HERE
         temp, mxr, pres, type, link = getARMProfiles(model_data_path, yyyymmdd, hour, aeri_lon, aeri_lat, size, aerioe_hght)
         if len(temp) == 1:
             print "\tWe weren't able to find any data from this date/time.  Let's skip it."
@@ -315,6 +325,46 @@ def getARMModelPrior(model_data_path, climo_prior, yyyymmdd, size, hh, hh_delta,
     print "Sa SHAPE: ", cov.shape
  
     return mean, cov, climo, types, paths, yyyymmdd, hh, priors.shape[0]
+
+# This is the code that gets called by run_prior_gen.py when we want to make a prior from
+# ONLINE MOTHERLODE data. It should be used only for realtime prior generation for AERIoe.
+def getRealtimePrior(climo_prior, yyyymmdd, size, hh, hh_delta, aeri_lon, aeri_lat):
+    #Load in latitude and longitude points for the RAP/RUC 13 km grid.
+
+    print "This prior is centered at: " + str(aeri_lat) + ',' + str(aeri_lon)
+    
+    #Get the nearest grid point to the AERI location.
+    print climo_prior
+    climo = Dataset(climo_prior)
+    aerioe_hght = climo.variables['height'][:]
+
+    dt = datetime.strptime(yyyymmdd + hh, '%Y%m%d%H') - timedelta(seconds=int(hh_delta)*60*60)
+
+    all_temps = None
+    all_mxrs = None
+    all_pres = None
+    print "Gathering profiles within a " + str(2*size) + "x" + str(2*size) + " grid."
+    types = []
+    paths = []
+    dt_string = datetime.strftime(dt, '%Y%m%d%H')
+    # Searches the MOTHERLODE UCAR THREDDS Server
+    all_temps, all_mxrs, all_pres, type, link = getMotherlodeProfiles(dt_string, int(hh_delta)*2, aeri_lat, aeri_lon, size, aerioe_hght)
+    paths = [link]
+    types.append(type)
+
+    all_temps = all_temps - 273.15
+    print paths, types
+    print "Shape of the temperature profiles: ", all_temps.shape
+    print "Shape of the water vapor mixing ratio profiles: ", all_temps.shape
+    priors = np.hstack((all_temps, all_mxrs))
+    
+    print "Shape of the prior: ", priors.shape
+    mean = np.mean(priors, axis=0)
+    print "Xa: ", mean.shape
+    cov = np.cov(priors.T)
+    print "Sa: ", cov.shape
+    return mean, cov, climo, types, paths, yyyymmdd, hh, priors.shape[0]
+
 
 # This is the code that gets called by run_prior_gen.py when we want to make a prior from
 # ONLINE RUC/RAP data.
@@ -528,5 +578,8 @@ def main():
     getModelPrior('prior_data/Xa_Sa_datafile.55_levels.month_08.cdf', "20110103", 10, "12", 3)
 
 if __name__ == '__main__':
-    main()
+    aeri_lon = -97
+    aeri_lat = 35
+    print getMotherlodeProfiles('2015022412', 6, aeri_lat, aeri_lon, 10, [10,20, 30])
+    #main()
 

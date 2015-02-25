@@ -76,6 +76,8 @@ if prior_type > 0:
         print "Using RUC/RAP historical data from the NOAA NOMADS server."
     elif prior_type == 2:
         print "Using ARM RUC/RAP files to generate the prior."
+    elif prior_type == 3:
+        print "USING MOTHERLODE UCAR file to generate the prior (often use for real-time prior generation)"
     else:
         print "Invalid \"prior_type\" variable in the VIP file, aborting program."
         sys.exit()
@@ -112,8 +114,11 @@ hour = datetime.strftime(cur_dt, '%H')
 if prior_type == 1:
     mean, cov, climo, types, paths, date, hour, n = gmp.getOnlineModelPrior(climo_file, date, prior_spatial, hour, prior_temporal, lon, lat)
 elif prior_type == 2:
+    # Most often used for the 1998-2003 ARM Boundary Facilities dataset
     arm_model_dir = findVIPVariable('arm_model_dir', vip)
     mean, cov, climo, types, paths, date, hour, n = gmp.getARMModelPrior(arm_model_dir, climo_file, date, prior_spatial, hour, prior_temporal, lon, lat) 
+elif prior_type == 3:
+    mean, cov, climo, types, paths, date, hour, n = gmp.getRealtimePrior(climo_file, date, prior_spatial, hour, prior_temporal, lon, lat)
 height = climo.variables['height'][:]
 
 
