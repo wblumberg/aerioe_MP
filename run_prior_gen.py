@@ -1,6 +1,6 @@
 import sys
 import numpy as np
-import pidly
+#import pidly
 import get_model_prior as gmp
 from netCDF4 import Dataset
 from datetime import datetime, timedelta
@@ -69,7 +69,11 @@ prior_type = findVIPVariable('prior_type', vip)
 correct = findVIPVariable('prior_std_corr', vip)
 
 month = yyyymmdd[4:6]
-climo_file = './prior_data/Xa_Sa_datafile.55_levels.month_' + str(month) + '.cdf'
+
+print "WARNING: You're using a hard coded path to the climatology prior files on Line 75 of run_prior_gen.py."
+print "This may not work if you are running this on a machine different than Wilma."
+climo_file = '/Users/gregblumberg/aerioe/prior_data/Xa_Sa_datafile.55_levels.month_' + str(month) + '.cdf'
+print "Here is the path being assumed:", climo_file
 
 if prior_type > 0:
     if prior_type == 1:
