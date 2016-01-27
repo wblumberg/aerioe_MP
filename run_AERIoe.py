@@ -1,6 +1,6 @@
 import sys
 import numpy as np
-import pidly
+#import pidly
 import get_model_prior as gmp
 from netCDF4 import Dataset
 from datetime import datetime, timedelta
@@ -280,8 +280,8 @@ while cur_dt < max_dts:
         retr_processes.pop(0).wait()
 
     if len(files) == 0:
-	    print "Prior file not found."
-        print "...trying the next retrieval in the queue."
+        print "Prior file not found."
+        #print "...trying the next retrieval in the queue."
         continue
  
     # Check to see if this file maybe already exists
